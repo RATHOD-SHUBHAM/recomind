@@ -126,8 +126,12 @@ uv run streamlit run main.py
 docker-compose up --build
 
 # Or manually
-docker build -t recomind .
-docker run -p 8501:8501 recomind
+docker build -t recomind:latest .
+docker tag recomind:latest user_name/recomind:latest
+docker push user_name/recomind:latest
+
+# Run
+docker run -p 8501:8501 user_name/recomind:latest
 ```
 
 ## 🎯 How to Use

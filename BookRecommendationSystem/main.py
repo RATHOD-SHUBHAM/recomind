@@ -64,13 +64,13 @@ def retrieve_semantic_recommendations(
         category: str = None,
         tone: str = None,
         initial_top_k: int = 50,
-        final_top_k: int = 8,
+        final_top_k: int = 16,
 ) -> pd.DataFrame:
     
     books = load_books_data()
     
     recs = db_books.similarity_search(query, k=initial_top_k)
-    
+
     books_list = [int(rec.page_content.strip('"').split()[0]) for rec in recs]
     book_recs = books[books["isbn13"].isin(books_list)].head(initial_top_k)
 
@@ -183,7 +183,7 @@ def main():
         - 💡 Discovering new authors
 
         ---
-        Powered by advanced **:green[LangChain]**, **:orange[OpenAI]**, and **:yellow[HugginFace]**.
+        Powered by advanced **:green[LangChain]**, **:rainbow[OpenAI]**, and **:orange[HugginFace]**.
         """
     )
 
@@ -198,7 +198,7 @@ def main():
         - Enter your OpenAI API key to get started.
 
         📝 **Describe Your Book**
-        - Tell us what kind of book you're looking for (e.g., "A story about forgiveness").
+        - Tell us what kind of book you're looking for (e.g., "A story about Mindset").
 
         🎯 **Refine Your Search**
         - Choose a specific category (fiction, non-fiction, etc.).
@@ -264,7 +264,7 @@ def main():
     with col1:
         user_query = st.text_input(
             "Please enter a description of a book:",
-            placeholder="e.g., A story about forgiveness"
+            placeholder="e.g., A story about Mindset"
         )
     
     with col2:
