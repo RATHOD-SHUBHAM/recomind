@@ -27,7 +27,11 @@ Docker Image : [Link](https://hub.docker.com/r/gibbo96/recomind)
 
 # Run
 docker pull gibbo96/recomind
-docker run -p 8501:8501 gibbo96/recomind:latest
+
+docker run -p 8501:8501 \
+  -v $(pwd)/dataset:/app/dataset \
+  -v $(pwd)/vector_db:/app/vector_db \
+  gibbo96/recomind:latest
 ```
 
 ---

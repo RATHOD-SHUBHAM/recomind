@@ -131,7 +131,10 @@ docker tag recomind:latest user_name/recomind:latest
 docker push user_name/recomind:latest
 
 # Run
-docker run -p 8501:8501 user_name/recomind:latest
+docker run -p 8501:8501 \
+  -v $(pwd)/dataset:/app/dataset \
+  -v $(pwd)/vector_db:/app/vector_db \
+  recomind/recomind:latest
 ```
 
 ## 🎯 How to Use

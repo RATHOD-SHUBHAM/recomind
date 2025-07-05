@@ -25,8 +25,8 @@ RUN uv pip install --system pandas matplotlib seaborn python-dotenv langchain la
 # Copy application code
 COPY . .
 
-# Create directory for vector database
-RUN mkdir -p vector_db
+# Create directory for vector database and set permissions
+RUN mkdir -p vector_db && chmod 777 vector_db
 
 # Expose port
 EXPOSE 8501

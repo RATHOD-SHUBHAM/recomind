@@ -27,36 +27,90 @@ def load_books_data():
     return books
 
 # Load vector database
-def load_vector_db(openai_api_key):
+def load_vector_db(openai_api_key, force_rebuild=False):
     # Set the API key for OpenAI
     os.environ["OPENAI_API_KEY"] = openai_api_key
     
+    # Check if environment variable forces rebuild
+    if os.getenv("FORCE_REBUILD_DB", "false").lower() == "true":
+        force_rebuild = True
+    
     persist_directory = "vector_db"
     
-    # Check if database already exists on disk
-    if os.path.exists(persist_directory):
-        st.info("📚 Loading existing vector database from disk...")
-        embeddings = OpenAIEmbeddings()
-        return Chroma(persist_directory=persist_directory, embedding_function=embeddings)
+    # Ensure the directory exists with proper permissions
+    if not os.path.exists(persist_directory):
+        try:
+            os.makedirs(persist_directory, mode=0o755, exist_ok=True)
+        except PermissionError:
+            st.warning("⚠️ Cannot create vector_db directory due to permissions. Using temporary directory.")
+            import tempfile
+            persist_directory = tempfile.mkdtemp()
     else:
-        st.info("🔨 Creating new vector database (this may take a few minutes)...")
-        # Load documents and create new database
-        raw_documents = TextLoader("dataset/tagged_description.txt").load()
-        text_splitter = CharacterTextSplitter(separator="\n", chunk_size=0, chunk_overlap=0)
-        documents = text_splitter.split_documents(raw_documents)
-        
-        # Create embeddings
-        embeddings = OpenAIEmbeddings()
-        
-        # Save to disk
+        # Try to ensure existing directory has proper permissions
+        try:
+            os.chmod(persist_directory, 0o755)
+        except PermissionError:
+            st.warning("⚠️ Cannot modify vector_db directory permissions. Using temporary directory.")
+            import tempfile
+            persist_directory = tempfile.mkdtemp()
+    
+    # Check if database already exists on disk and force_rebuild is False
+    if os.path.exists(persist_directory) and not force_rebuild:
+        # Check if the directory contains actual database files
+        db_files = os.listdir(persist_directory) if os.path.exists(persist_directory) else []
+        # Look for Chroma database files
+        has_chroma_files = any(f.endswith('.sqlite3') or f.endswith('.bin') or f.endswith('.pickle') for f in db_files)
+        if has_chroma_files:
+            try:
+                st.info("📚 Loading from existing database...")
+                embeddings = OpenAIEmbeddings()
+                vector_store = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
+                # Test if the database is working by trying a simple query
+                test_results = vector_store.similarity_search("test", k=1)
+                if test_results:
+                    return vector_store
+                else:
+                    force_rebuild = True
+            except Exception as e:
+                force_rebuild = True
+        else:
+            force_rebuild = True
+    
+    # Create new database (either because it doesn't exist or force_rebuild is True)
+    if force_rebuild and os.path.exists(persist_directory):
+        clear_vector_db()
+    
+    st.info("🔨 Creating new database...")
+    
+    # Load documents and create new database
+    raw_documents = TextLoader("dataset/tagged_description.txt").load()
+    text_splitter = CharacterTextSplitter(separator="\n", chunk_size=0, chunk_overlap=0)
+    documents = text_splitter.split_documents(raw_documents)
+    
+    # Create embeddings
+    embeddings = OpenAIEmbeddings()
+    
+    # Save to disk
+    try:
         vector_store = Chroma.from_documents(
             documents,
             embeddings,
             persist_directory=persist_directory
         )
-        
-        st.success("✅ Vector database created and saved to disk!")
         return vector_store
+    except Exception as e:
+        if "readonly database" in str(e).lower() or "permission" in str(e).lower():
+            import tempfile
+            temp_dir = tempfile.mkdtemp()
+            
+            vector_store = Chroma.from_documents(
+                documents,
+                embeddings,
+                persist_directory=temp_dir
+            )
+            return vector_store
+        else:
+            raise e
 
 def retrieve_semantic_recommendations(
         query: str,
@@ -250,6 +304,8 @@ def main():
     # Main application (only shown after API key is set)
     st.success("🔐 API key is configured and ready to use!")
     
+
+    
     # Load data
     books = load_books_data()
 
@@ -287,7 +343,7 @@ def main():
             try:
                 # Combined spinner for the entire process
                 with st.spinner("Finding the perfect books for you..."):
-                    db_books = load_vector_db(st.session_state.openai_api_key)
+                    db_books = load_vector_db(st.session_state.openai_api_key, force_rebuild=False)
                     results = recommend_books_with_db(user_query, category_dropdown, tone_dropdown, db_books)
                 
                 if results:
@@ -310,6 +366,19 @@ def main():
     # API Key and Database Management
     st.markdown("---")
     with st.expander("🔧 Settings & Management"):
+        # Show database size if it exists
+        persist_directory = "vector_db"
+        if os.path.exists(persist_directory):
+            try:
+                total_size = 0
+                for dirpath, dirnames, filenames in os.walk(persist_directory):
+                    for filename in filenames:
+                        filepath = os.path.join(dirpath, filename)
+                        total_size += os.path.getsize(filepath)
+                size_mb = total_size / (1024 * 1024)
+                st.caption(f"Database size: {size_mb:.1f} MB")
+            except:
+                pass
         col1, col2 = st.columns(2)
         
         with col1:
@@ -323,15 +392,19 @@ def main():
             st.markdown("**📚 Database Management**")
             persist_directory = "vector_db"
             if os.path.exists(persist_directory):
-                st.success("✅ Vector database exists on disk")
-                if st.button("🗑️ Clear Database"):
-                    if clear_vector_db():
-                        st.success("✅ Database cleared successfully!")
-                        st.rerun()
-                    else:
-                        st.error("❌ Failed to clear database")
-            else:
-                st.info("ℹ️ No database found on disk")
+                col2a, col2b = st.columns(2)
+                with col2a:
+                    if st.button("🗑️ Clear Database"):
+                        if clear_vector_db():
+                            st.rerun()
+                with col2b:
+                    if st.button("🔨 Rebuild Database"):
+                        with st.spinner("Rebuilding..."):
+                            try:
+                                db_books = load_vector_db(st.session_state.openai_api_key, force_rebuild=True)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed to rebuild: {str(e)}")
     
     # Add some styling
     st.markdown("---")
